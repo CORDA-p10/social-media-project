@@ -2,8 +2,8 @@
 # world's container and targets that container's own Mastodon on localhost.
 #
 #   docker compose exec world1 bash -lc \
-#     "cd /opt/agents && .venv/bin/python -m corda_agents.run"            # wipe + provision + run (default)
-#   ... -m corda_agents.run --no-reset                                    # reuse existing accounts/tokens
+#     "cd /opt/agents && .venv/bin/python -m corda_agents.run"             # wipe + provision + run (default)
+#   ... -m corda_agents.run --resume                                       # skip reset; resume to the target tick
 
 mastodon_base_url: http://localhost:10000     # in-container nginx (injects Host=LOCAL_DOMAIN + X-Forwarded-Proto=https)
 tokens_file: tokens.yaml                      # produced by `run --reset`

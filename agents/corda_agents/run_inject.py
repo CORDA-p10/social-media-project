@@ -135,6 +135,12 @@ def _load_dataset(path: Path) -> list[dict[str, str]]:
     display_name, text}. Retweets, quote tweets, and replies are skipped —
     their text refers to another post that doesn't exist in this world — as
     are rows with no author, no text, or an unparseable date."""
+    if not path.exists():
+        raise SystemExit(
+            f"seed dataset not found: {path}\n"
+            "The original scraped-tweet dataset is not redistributed. Point "
+            "`seed_data` in agents/config.yaml at your own CSV."
+        )
     kept: list[tuple[datetime, dict[str, str]]] = []
     skipped = unusable = 0
     with path.open(newline="", encoding="utf-8") as f:

@@ -17,15 +17,14 @@ dependencies = [
     # CORDA_TOXICITY_MODEL if a leaner image ever matters. Only the one world
     # running downrank_toxicity imports torch / loads the model (lazy).
     "detoxify>=0.5",
-    # downrank_outrage wraps scorers/outrage_pipeline.py (NRC anger/disgust via
-    # nrclex + MFD 2.0 + percentile reference). nrclex is pinned — we use its
-    # private _load_bundled_lexicon. scipy is a top-level import of the pipeline;
-    # nltk data (wordnet/omw-1.4/punkt_tab/averaged_perceptron_tagger_eng) is baked
-    # at build (Dockerfile). NRC is NOT vendored — it ships inside nrclex. All
+    # downrank_outrage's lexicon pipeline, inline in scorers/outrage.py (NRC
+    # anger/disgust via nrclex + MFD 2.0 + frozen percentile reference). nrclex
+    # is pinned — we use its private _load_bundled_lexicon. nltk data
+    # (wordnet/omw-1.4/punkt_tab/averaged_perceptron_tagger_eng) is baked at
+    # build (Dockerfile). NRC is NOT vendored — it ships inside nrclex. All
     # lazy-imported, so only the outrage world loads any of this.
     "nrclex==4.1.0",
     "nltk>=3.8",
-    "scipy>=1.11",
 ]
 
 [build-system]

@@ -19,9 +19,6 @@ from .rankers import Ranker
 from .seen import SeenStore
 from .rankers.engagement_bridging import EngagementBridgingRanker
 from .rankers.chronological import ChronologicalRanker
-from .rankers.constructive_c3 import ConstructiveC3Ranker
-from .rankers.constructive_gemini import ConstructiveGeminiRanker
-from .rankers.diversity_basic import DiversityBasicRanker
 from .rankers.downrank_toxicity import DownrankToxicityRanker
 from .rankers.downrank_outrage import DownrankOutrageRanker
 from .rankers.engagement_homophily import EngagementHomophilyRanker
@@ -34,10 +31,7 @@ logger = logging.getLogger("corda_rankers")
 RANKERS: dict[str, Callable[[], Ranker]] = {
     "chronological":       ChronologicalRanker,
     "engagement":          EngagementRanker,
-    "constructive_gemini": ConstructiveGeminiRanker,
-    "constructive_c3":     ConstructiveC3Ranker,
     "engagement_bridging": EngagementBridgingRanker,
-    "diversity_basic":     DiversityBasicRanker,
     "engagement_homophily": EngagementHomophilyRanker,
     "downrank_toxicity":   DownrankToxicityRanker,
     "downrank_outrage":    DownrankOutrageRanker,

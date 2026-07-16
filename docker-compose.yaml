@@ -38,8 +38,8 @@ x-mastodon-env: &mastodon-env
   ACTIVE_RECORD_ENCRYPTION_PRIMARY_KEY: ${ACTIVE_RECORD_ENCRYPTION_PRIMARY_KEY}
   ACTIVE_RECORD_ENCRYPTION_DETERMINISTIC_KEY: ${ACTIVE_RECORD_ENCRYPTION_DETERMINISTIC_KEY}
   ACTIVE_RECORD_ENCRYPTION_KEY_DERIVATION_SALT: ${ACTIVE_RECORD_ENCRYPTION_KEY_DERIVATION_SALT}
-  # LLM endpoint (OpenAI-compatible proxy) — the agent driver + the
-  # constructive ranker's scorer call it. OPENAI_API_KEY in .env is the proxy key.
+  # LLM endpoint (OpenAI-compatible proxy) — the agent driver calls it.
+  # OPENAI_API_KEY in .env is the proxy key.
   OPENAI_BASE_URL: ${OPENAI_BASE_URL}
   OPENAI_API_KEY: ${OPENAI_API_KEY}
   # Tuning to keep each instance lean.
