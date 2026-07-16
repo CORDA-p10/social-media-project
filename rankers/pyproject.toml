@@ -1,0 +1,36 @@
+[project]
+name = "corda-rankers"
+version = "1.0.0"
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.30",
+    "pydantic>=2.5",
+    "redis>=5.0",
+    "httpx>=0.27",
+    # engagement_bridging scorer learns its user embedding via a numpy eigendecomposition.
+    "numpy>=1.26",
+    # downrank_toxicity scorer runs Detoxify (unitary). torch is pinned to the
+    # CPU-only wheel in the Dockerfile (~200 MB, not the ~2 GB CUDA build — no
+    # GPU on the box) — that's the real image win. Default model is `unbiased`
+    # (~500 MB RoBERTa-base); `unbiased-small` (~50 MB ALBERT) is available via
+    # CORDA_TOXICITY_MODEL if a leaner image ever matters. Only the one world
+    # running downrank_toxicity imports torch / loads the model (lazy).
+    "detoxify>=0.5",
+    # downrank_outrage wraps scorers/outrage_pipeline.py (NRC anger/disgust via
+    # nrclex + MFD 2.0 + percentile reference). nrclex is pinned — we use its
+    # private _load_bundled_lexicon. scipy is a top-level import of the pipeline;
+    # nltk data (wordnet/omw-1.4/punkt_tab/averaged_perceptron_tagger_eng) is baked
+    # at build (Dockerfile). NRC is NOT vendored — it ships inside nrclex. All
+    # lazy-imported, so only the outrage world loads any of this.
+    "nrclex==4.1.0",
+    "nltk>=3.8",
+    "scipy>=1.11",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["corda_rankers"]

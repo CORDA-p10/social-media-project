@@ -1,0 +1,187 @@
+# Multi-world Mastodon simulation on a single VPS.
+#
+# Each "world" is one Mastodon instance running ONE ranking algorithm, fully
+# isolated (own Postgres database + own Redis DB indices) but sharing one
+# Postgres server and one Redis server so the whole thing fits in budget.
+#
+# All six worlds are active (databases pre-created by pg-init.sql).
+#
+#   docker compose up -d --build      # build once, start active worlds
+#   docker compose logs -f world2     # follow one world
+#   docker compose exec world1 bash -lc \
+#       "cd /opt/agents && .venv/bin/python -m corda_agents.run"   # run the sim
+#
+# Sizing: 2 worlds ≈ 2.5-2.8 GB; 6 worlds ≈ ~6.6 GB running (measured on the
+#         15 GB / 8 vCPU box). ~8 GB / 4 vCPU is the practical minimum. Add 4 GB swap.
+# Secrets come from ./.env (generated once on the box — see README.md).
+
+name: corda-worlds
+
+x-mastodon-common: &mastodon-common
+  build:
+    context: .
+    dockerfile: Dockerfile
+  image: corda-mastodon:local
+  restart: unless-stopped
+  depends_on:
+    postgres:
+      condition: service_healthy
+    redis:
+      condition: service_healthy
+
+x-mastodon-env: &mastodon-env
+  # Shared secrets (generated once on the box; same set is fine for a closed sim).
+  SECRET_KEY_BASE: ${SECRET_KEY_BASE}
+  OTP_SECRET: ${OTP_SECRET}
+  VAPID_PUBLIC_KEY: ${VAPID_PUBLIC_KEY}
+  VAPID_PRIVATE_KEY: ${VAPID_PRIVATE_KEY}
+  ACTIVE_RECORD_ENCRYPTION_PRIMARY_KEY: ${ACTIVE_RECORD_ENCRYPTION_PRIMARY_KEY}
+  ACTIVE_RECORD_ENCRYPTION_DETERMINISTIC_KEY: ${ACTIVE_RECORD_ENCRYPTION_DETERMINISTIC_KEY}
+  ACTIVE_RECORD_ENCRYPTION_KEY_DERIVATION_SALT: ${ACTIVE_RECORD_ENCRYPTION_KEY_DERIVATION_SALT}
+  # LLM endpoint (OpenAI-compatible proxy) — the agent driver + the
+  # constructive ranker's scorer call it. OPENAI_API_KEY in .env is the proxy key.
+  OPENAI_BASE_URL: ${OPENAI_BASE_URL}
+  OPENAI_API_KEY: ${OPENAI_API_KEY}
+  # Tuning to keep each instance lean.
+  WEB_CONCURRENCY: "0"   # single-mode puma (one process, no worker fork) — agent + browser load is light
+  MAX_THREADS: "5"       # keep 5 threads so a browser page-load + the agent's calls serve concurrently
+  ES_ENABLED: "false"
+  # Closed sim served publicly read-only: allow anonymous (logged-out) access so
+  # the public timeline is viewable. Both default to "true" in the Dockerfile,
+  # which makes Mastodon reject all unauthenticated API access.
+  LIMITED_FEDERATION_MODE: "false"
+  AUTHORIZED_FETCH: "false"
+  SMTP_DELIVERY_METHOD: test
+  DISABLE_REGISTRATION_CAPTCHA: "true"
+  RAILS_ENV: production
+  PORT: "10000"
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: mastodon
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: mastodon_w1            # pg-init.sql adds w2..w5
+    volumes:
+      - pg-data:/var/lib/postgresql/data
+      - ./pg-init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U mastodon"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    # noeviction so Sidekiq jobs are never silently dropped.
+    command: ["redis-server", "--maxmemory-policy", "noeviction"]
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+  world1:
+    <<: *mastodon-common
+    environment:
+      <<: *mastodon-env
+      LOCAL_DOMAIN: ${WORLD1_LOCAL_DOMAIN:-w1.corda.local}
+      CORDA_RANKER_NAME: chronological
+      DATABASE_URL: postgresql://mastodon:${POSTGRES_PASSWORD}@postgres:5432/mastodon_w1
+      REDIS_URL: redis://redis:6379/0
+      CORDA_RANKER_REDIS_URL: redis://redis:6379/1
+    ports:
+      - "127.0.0.1:3001:10000"
+    volumes:
+      - w1-system:/opt/mastodon/public/system   # persist media (avatars) across recreates
+      - avatar-cache:/opt/avatar-cache          # shared DiceBear avatar cache (per username+seed; fetched once ever)
+
+  world2:
+    <<: *mastodon-common
+    environment:
+      <<: *mastodon-env
+      LOCAL_DOMAIN: ${WORLD2_LOCAL_DOMAIN:-w2.corda.local}
+      CORDA_RANKER_NAME: engagement
+      DATABASE_URL: postgresql://mastodon:${POSTGRES_PASSWORD}@postgres:5432/mastodon_w2
+      REDIS_URL: redis://redis:6379/2
+      CORDA_RANKER_REDIS_URL: redis://redis:6379/3
+    ports:
+      - "127.0.0.1:3002:10000"
+    volumes:
+      - w2-system:/opt/mastodon/public/system   # persist media (avatars) across recreates
+      - avatar-cache:/opt/avatar-cache          # shared DiceBear avatar cache (per username+seed; fetched once ever)
+
+  world3:
+    <<: *mastodon-common
+    environment:
+      <<: *mastodon-env
+      LOCAL_DOMAIN: ${WORLD3_LOCAL_DOMAIN:-w3.corda.local}
+      CORDA_RANKER_NAME: engagement_homophily   # personalised: per-viewer homophily over the learned favourite-graph embedding; anonymous viewers get plain engagement order
+      DATABASE_URL: postgresql://mastodon:${POSTGRES_PASSWORD}@postgres:5432/mastodon_w3
+      REDIS_URL: redis://redis:6379/4
+      CORDA_RANKER_REDIS_URL: redis://redis:6379/5
+    ports:
+      - "127.0.0.1:3003:10000"
+    volumes:
+      - w3-system:/opt/mastodon/public/system   # persist media (avatars) across recreates
+      - avatar-cache:/opt/avatar-cache          # shared DiceBear avatar cache (per username+seed; fetched once ever)
+  world4:
+    <<: *mastodon-common
+    environment:
+      <<: *mastodon-env
+      LOCAL_DOMAIN: ${WORLD4_LOCAL_DOMAIN:-w4.corda.local}
+      CORDA_RANKER_NAME: engagement_bridging   # learns its user embedding online from favourites; no config needed
+      DATABASE_URL: postgresql://mastodon:${POSTGRES_PASSWORD}@postgres:5432/mastodon_w4
+      REDIS_URL: redis://redis:6379/6
+      CORDA_RANKER_REDIS_URL: redis://redis:6379/7
+    ports:
+      - "127.0.0.1:3004:10000"
+    volumes:
+      - w4-system:/opt/mastodon/public/system   # persist media (avatars) across recreates
+      - avatar-cache:/opt/avatar-cache          # shared DiceBear avatar cache (per username+seed; fetched once ever)
+
+  world5:
+    <<: *mastodon-common
+    environment:
+      <<: *mastodon-env
+      LOCAL_DOMAIN: ${WORLD5_LOCAL_DOMAIN:-w5.corda.local}
+      CORDA_RANKER_NAME: downrank_toxicity
+      DATABASE_URL: postgresql://mastodon:${POSTGRES_PASSWORD}@postgres:5432/mastodon_w5
+      REDIS_URL: redis://redis:6379/8
+      CORDA_RANKER_REDIS_URL: redis://redis:6379/9
+    ports:
+      - "127.0.0.1:3005:10000"
+    volumes:
+      - w5-system:/opt/mastodon/public/system   # persist media (avatars) across recreates
+      - avatar-cache:/opt/avatar-cache          # shared DiceBear avatar cache (per username+seed; fetched once ever)
+
+  world6:
+    <<: *mastodon-common
+    environment:
+      <<: *mastodon-env
+      LOCAL_DOMAIN: ${WORLD6_LOCAL_DOMAIN:-w6.corda.local}
+      CORDA_RANKER_NAME: downrank_outrage
+      DATABASE_URL: postgresql://mastodon:${POSTGRES_PASSWORD}@postgres:5432/mastodon_w6
+      REDIS_URL: redis://redis:6379/10
+      CORDA_RANKER_REDIS_URL: redis://redis:6379/11
+    ports:
+      - "127.0.0.1:3006:10000"
+    volumes:
+      - w6-system:/opt/mastodon/public/system   # persist media (avatars) across recreates
+      - avatar-cache:/opt/avatar-cache          # shared DiceBear avatar cache (per username+seed; fetched once ever)
+
+volumes:
+  pg-data:
+  redis-data:
+  w1-system:
+  w2-system:
+  w3-system:
+  w4-system:
+  w5-system:
+  w6-system:
+  avatar-cache:

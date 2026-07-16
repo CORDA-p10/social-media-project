@@ -1,0 +1,28 @@
+# Run config. The same file works in every world — the driver runs inside a
+# world's container and targets that container's own Mastodon on localhost.
+#
+#   docker compose exec world1 bash -lc \
+#     "cd /opt/agents && .venv/bin/python -m corda_agents.run"            # wipe + provision + run (default)
+#   ... -m corda_agents.run --no-reset                                    # reuse existing accounts/tokens
+
+mastodon_base_url: http://localhost:10000     # in-container nginx (injects Host=LOCAL_DOMAIN + X-Forwarded-Proto=https)
+tokens_file: tokens.yaml                      # produced by `run --reset`
+
+models:
+  - claude-sonnet-5
+  - gpt-5.6-luna
+  - vertex_ai/gemini-3.5-flash
+
+personas_yaml: personas_ess11_3000.yaml       # pre-built persona population, one entry per agent
+ticks: 5000                                   # total agent-actions across the run
+num_agents: 3000                              # how many to use; seeded sample of personas.yaml. Override with --num-agents
+adversarial_ratio: 0.1                        # fraction of each model's agents made adversarial AFTER sampling, round(ratio × group) (YAML is_adversarial ignored); 0.1 × 333/model = 33
+
+seed_data: /opt/seed-data/final_cleaned_tweets.csv
+
+# Determinism: same seed + code + Mastodon state ⇒ same actions.
+# Set to null for non-deterministic runs.
+seed: 48
+budget_usd: 55.0
+
+log_file: runs/run.jsonl
